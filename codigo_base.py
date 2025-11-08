@@ -10,7 +10,12 @@ import qrcode
 def imprimir_qr_en_terminal(url):
     """Dada una URL la imprime por terminal como un QR"""
     #COMPLETAR usando la librería qrcode
-    pass
+    qr = qrcode.QRCode(border=1)
+    qr.add_data(url)
+    qr.make()
+
+    qr.print_ascii()
+    
 
 def get_wifi_ip():
     """Obtiene la IP local asociada a la interfaz de red (por ejemplo, Wi-Fi)."""
@@ -134,26 +139,56 @@ def start_server(archivo_descarga=None, modo_upload=False):
     # 1. Obtener IP local y poner al servidor a escuchar en un puerto aleatorio
     #COMPLETAR
 
-    ip_server = ""
-    puerto = ""
+    ip_server = get_wifi_ip()
+    puerto = 5002
 
-    server_socket = ""
+    s = socket(AF_INET, SOCK_STREAM)
+    print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server)
+    s.bind((ip_server, puerto))
+    s.listen()
+
 
     # 2. Mostrar información del servidor y el código QR
     # COMPLETAR: imprimir URL y modo de operación (download/upload)
-
+    url = "http://" + ip_server + ":" + str(puerto)
+    if modo_upload == True: 
+        print("Estas en modo Upload")
+    else:
+        print("Estas en modo Download")
+    imprimir_qr_en_terminal(url)
+    print(url)
     # 3. Esperar conexiones y atender un cliente
     # COMPLETAR:
     # - aceptar la conexión (accept)
+    conn, addr = s.accept()
+
     # - recibir los datos (recv)
+    print(f"Connected by {addr}")
+    data = conn.recv(1024)            
+    print(data) # Fijarnos que sea GET
+
+    html = ""
+    if modo_upload == True:
+        html = generar_html_interfaz("upload")
+    else:
+        html = generar_html_interfaz("download")
+    
+    # Construct the HTTP response
+    response_headers = "HTTP/1.1 200 OK\r\n"
+    response_headers += "Content-Type: text/html\r\n"
+    response_headers += f"Content-Length: {len(html)}\r\n"
+    response_headers += "\r\n"  # Separator between headers and body
+
+    full_response = (response_headers + html).encode('utf-8')
+    conn.sendall(full_response)
+        
+
     # - decodificar la solicitud HTTP
     # - determinar método (GET/POST) y ruta (/ o /download)
     # - generar la respuesta correspondiente (HTML o archivo)
     # - enviar la respuesta al cliente
     # - cerrar la conexión
-
-    pass  # Eliminar cuando esté implementado
-
+   
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
