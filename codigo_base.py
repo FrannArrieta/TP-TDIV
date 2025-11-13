@@ -27,6 +27,37 @@ def get_wifi_ip():
         s.close()
     return ip #Devuelve la IP como string
 
+def extraer_boundary(headers):
+    return headers.split("boundary=")[1].split("\r\n")[0]
+
+def extraer_content_length(headers):
+    return int(headers.split("\r\n")[3].split(" ")[1])
+
+def generar_headers_http(body, codigo):
+    response_headers = "HTTP/1.1" + codigo +  "\r\n"
+    response_headers += "Content-Type: text/html\r\n"
+    response_headers += f"Content-Length: {len(body)}\r\n"
+    response_headers += "\r\n"  # Separator between headers and body
+
+    full_response = (response_headers + body)
+    return full_response
+
+def generar_respuesta_http(headers, body, modo_upload, tipo_req):
+    res = ""
+    
+    if(tipo_req == "GET"):
+        body = ""
+        if modo_upload == True:
+            body = generar_html_interfaz("upload")
+        else:
+            body = generar_html_interfaz("download")
+        res = generar_headers_http(body, "200 OK")
+    elif(tipo_req == "POST"):
+        boundary = extraer_boundary(headers)
+        manejar_carga(body, boundary, "archivos_servidor")
+
+    return res
+
 def parsear_multipart(body, boundary):
     """Función auxiliar (ya implementada) para parsear multipart/form-data."""
     try:
@@ -125,7 +156,18 @@ def manejar_carga(body, boundary, directorio_destino="."):
     """
     Procesa un POST con multipart/form-data, guarda el archivo y devuelve una página de confirmación.
     """
-    # COMPLETAR
+    multipart = parsear_multipart(body, boundary)
+
+    nombre_archivo = multipart[0]
+    contenido = multipart[1]
+
+    print(nombre_archivo)
+    ruta = directorio_destino + "/" + nombre_archivo
+
+    f = open(ruta, "wb")
+    f.write(contenido)
+    f.close()
+
     return b""
 
 
@@ -140,13 +182,8 @@ def start_server(archivo_descarga=None, modo_upload=False):
     #COMPLETAR
 
     ip_server = get_wifi_ip()
-    puerto = 5002
-
-    s = socket(AF_INET, SOCK_STREAM)
+    puerto = 5003
     print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server)
-    s.bind((ip_server, puerto))
-    s.listen()
-
 
     # 2. Mostrar información del servidor y el código QR
     # COMPLETAR: imprimir URL y modo de operación (download/upload)
@@ -157,37 +194,49 @@ def start_server(archivo_descarga=None, modo_upload=False):
         print("Estas en modo Download")
     imprimir_qr_en_terminal(url)
     print(url)
-    # 3. Esperar conexiones y atender un cliente
-    # COMPLETAR:
-    # - aceptar la conexión (accept)
-    conn, addr = s.accept()
 
-    # - recibir los datos (recv)
-    print(f"Connected by {addr}")
-    data = conn.recv(1024)            
-    print(data) # Fijarnos que sea GET
+    while True:
+        s = socket(AF_INET, SOCK_STREAM)
+        s.bind((ip_server, puerto))
+        s.listen()
 
-    html = ""
-    if modo_upload == True:
-        html = generar_html_interfaz("upload")
-    else:
-        html = generar_html_interfaz("download")
-    
-    # Construct the HTTP response
-    response_headers = "HTTP/1.1 200 OK\r\n"
-    response_headers += "Content-Type: text/html\r\n"
-    response_headers += f"Content-Length: {len(html)}\r\n"
-    response_headers += "\r\n"  # Separator between headers and body
+        # 3. Esperar conexiones y atender un cliente
+        # COMPLETAR:
+        # - aceptar la conexión (accept)
+        conn, addr = s.accept()
 
-    full_response = (response_headers + html).encode('utf-8')
-    conn.sendall(full_response)
-        
+        # - recibir los datos (recv)
+        print(f"Connected by {addr}")
+        headers = b""
+        while b"\r\n\r\n" not in headers:
+            chunk = conn.recv(1024)
+            if not chunk:
+                break
+            headers += chunk
 
-    # - decodificar la solicitud HTTP
-    # - determinar método (GET/POST) y ruta (/ o /download)
-    # - generar la respuesta correspondiente (HTML o archivo)
-    # - enviar la respuesta al cliente
-    # - cerrar la conexión
+        headers = headers.decode(errors="ignore")
+        tipo_req = headers.split("\r\n")[0].split(" ")[0]
+        body = b""
+
+        if(tipo_req == "POST"):
+            content_length = extraer_content_length(headers)
+            # Leer el resto del body si falta
+            while len(body) < content_length:
+                chunk = conn.recv(1024)
+                if not chunk:
+                    break
+                body += chunk
+
+        res = generar_respuesta_http(headers, body, modo_upload, tipo_req)
+       
+        conn.sendall(res.encode('utf-8'))
+            
+
+        # - decodificar la solicitud HTTP
+        # - determinar método (GET/POST) y ruta (/ o /download)
+        # - generar la respuesta correspondiente (HTML o archivo)
+        # - enviar la respuesta al cliente
+        # - cerrar la conexión
    
 
 if __name__ == "__main__":
