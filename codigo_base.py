@@ -27,11 +27,39 @@ def get_wifi_ip():
         s.close()
     return ip #Devuelve la IP como string
 
+def leer_headers(conn):
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = conn.recv(1024)
+        if not chunk:
+            break
+        data += chunk
+
+    # Separa headers y lo que ya es parte del body
+
+    data_leida = data.split(b"\r\n\r\n", 1)
+    header_bytes = data_leida[0]
+    body_start = b""
+    if(len(data_leida) > 1):
+        body_start = data_leida[1]
+
+    return header_bytes.decode(errors="ignore"), body_start
+
+def leer_body(conn, content_length, body_start):
+    body = body_start
+    # Leer el resto del body si falta
+    while len(body) < content_length:
+        chunk = conn.recv(1024)
+        if not chunk:
+            break
+        body += chunk
+    return body
+
 def extraer_boundary(headers):
     return headers.split("boundary=")[1].split("\r\n")[0]
 
 def extraer_content_length(headers):
-    return int(headers.split("\r\n")[3].split(" ")[1])
+    return int(headers.split("Content-Length: ")[1].split("\r\n")[0])
 
 def generar_headers_http(body, codigo):
     response_headers = "HTTP/1.1" + codigo +  "\r\n"
@@ -42,19 +70,27 @@ def generar_headers_http(body, codigo):
     full_response = (response_headers + body)
     return full_response
 
-def generar_respuesta_http(headers, body, modo_upload, tipo_req):
+def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida):
     res = ""
     
     if(tipo_req == "GET"):
-        body = ""
-        if modo_upload == True:
-            body = generar_html_interfaz("upload")
-        else:
+        if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"): # PREGUNTAR A EMI (or rafa)
+            body = ""
+            if modo_upload == True:
+                body = generar_html_interfaz("upload")
+            else:
+                body = generar_html_interfaz("download")
+            res = generar_headers_http(body, "200 OK")
+        elif(ruta_pedida == "/download"):
             body = generar_html_interfaz("download")
-        res = generar_headers_http(body, "200 OK")
+            res = generar_headers_http(body, "200 OK")
+        else:
+            body = generar_pagina_error("404: NOT FOUND")
+            res = generar_headers_http(body, "404 NOT FOUND")
+
     elif(tipo_req == "POST"):
         boundary = extraer_boundary(headers)
-        manejar_carga(body, boundary, "archivos_servidor")
+        res = manejar_carga(body, boundary, "archivos_servidor")
 
     return res
 
@@ -138,7 +174,24 @@ def generar_html_interfaz(modo):
 </html>
 """
 
-
+def generar_pagina_error(error):
+    return f"""
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Error</title>
+    <style>
+      body {{ font-family: sans-serif; max-width: 500px; margin: 50px auto; }}
+      a {{ display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }}
+    </style>
+  </head>
+  <body>
+    <h1>Ha ocurrido un error</h1>
+    <p>{error}</p>
+    <a href="/">Volver a inicio</a>
+  </body>
+</html>
+"""
 
 #CODIGO A COMPLETAR
 
@@ -156,19 +209,25 @@ def manejar_carga(body, boundary, directorio_destino="."):
     """
     Procesa un POST con multipart/form-data, guarda el archivo y devuelve una página de confirmación.
     """
+    res = ""
     multipart = parsear_multipart(body, boundary)
 
     nombre_archivo = multipart[0]
     contenido = multipart[1]
 
-    print(nombre_archivo)
-    ruta = directorio_destino + "/" + nombre_archivo
+    if(nombre_archivo is not None):
+        print(nombre_archivo)
+        ruta = directorio_destino + "/" + nombre_archivo
 
-    f = open(ruta, "wb")
-    f.write(contenido)
-    f.close()
+        f = open(ruta, "wb")
+        f.write(contenido)
+        f.close()
 
-    return b""
+        body = generar_html_interfaz("upload") # Esto deberia ser pag. de confirmado.
+        res = generar_headers_http(body, "200 OK")
+        
+
+    return res
 
 
 def start_server(archivo_descarga=None, modo_upload=False):
@@ -194,50 +253,33 @@ def start_server(archivo_descarga=None, modo_upload=False):
         print("Estas en modo Download")
     imprimir_qr_en_terminal(url)
     print(url)
+    s = socket(AF_INET, SOCK_STREAM)
+    s.bind((ip_server, puerto))
+    
+    s.listen()
 
     while True:
-        s = socket(AF_INET, SOCK_STREAM)
-        s.bind((ip_server, puerto))
-        s.listen()
-
-        # 3. Esperar conexiones y atender un cliente
-        # COMPLETAR:
-        # - aceptar la conexión (accept)
-        conn, addr = s.accept()
-
-        # - recibir los datos (recv)
-        print(f"Connected by {addr}")
-        headers = b""
-        while b"\r\n\r\n" not in headers:
-            chunk = conn.recv(1024)
-            if not chunk:
-                break
-            headers += chunk
-
-        headers = headers.decode(errors="ignore")
+        conn, addr = s.accept() # Si queremos mantener abierto esto arriba
+        headers, body_start = leer_headers(conn)
+        print(headers.split("\r\n")[0])
+        
         tipo_req = headers.split("\r\n")[0].split(" ")[0]
+        ruta_pedida = headers.split("\r\n")[0].split(" ")[1]
+
+        print(f"-- Request {tipo_req} {ruta_pedida} de {addr[0]} con socket {addr[1]}")
         body = b""
 
         if(tipo_req == "POST"):
             content_length = extraer_content_length(headers)
-            # Leer el resto del body si falta
-            while len(body) < content_length:
-                chunk = conn.recv(1024)
-                if not chunk:
-                    break
-                body += chunk
+            body = leer_body(conn, content_length, body_start)
 
-        res = generar_respuesta_http(headers, body, modo_upload, tipo_req)
+        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida)
        
-        conn.sendall(res.encode('utf-8'))
-            
+        conn.sendall(res.encode())
+        conn.close() # Y sacar esto para mantener abierto
 
-        # - decodificar la solicitud HTTP
-        # - determinar método (GET/POST) y ruta (/ o /download)
-        # - generar la respuesta correspondiente (HTML o archivo)
-        # - enviar la respuesta al cliente
-        # - cerrar la conexión
-   
+    # Ver cuando se cierra ...
+    conn.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
