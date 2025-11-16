@@ -61,17 +61,22 @@ def extraer_boundary(headers):
 def extraer_content_length(headers):
     return int(headers.split("Content-Length: ")[1].split("\r\n")[0])
 
-def generar_headers_http(body, codigo):
+def generar_headers_http(body, codigo, archivo = None):
     response_headers = "HTTP/1.1" + codigo +  "\r\n"
-    response_headers += "Content-Type: text/html\r\n"
     response_headers += f"Content-Length: {len(body)}\r\n"
+
+    if archivo:
+        response_headers += "Content-Type: application/octet-stream\r\n"
+        response_headers += f'Content-Disposition: attachment; filename="{archivo}"\r\n'
+    else:
+        response_headers += "Content-Type: text/html\r\n"
+    
     response_headers += "\r\n"  # Separator between headers and body
+    
+    return response_headers.encode() + body
 
-    full_response = (response_headers + body)
-    return full_response
-
-def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida):
-    res = ""
+def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_pedido = None):
+    res = b""
     
     if(tipo_req == "GET"):
         if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"): # PREGUNTAR A EMI (or rafa)
@@ -80,13 +85,15 @@ def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida):
                 body = generar_html_interfaz("upload")
             else:
                 body = generar_html_interfaz("download")
-            res = generar_headers_http(body, "200 OK")
+            res = generar_headers_http(body.encode(), "200 OK")
         elif(ruta_pedida == "/download"):
-            body = generar_html_interfaz("download")
-            res = generar_headers_http(body, "200 OK")
+            # body = generar_html_interfaz("download")
+
+            # res = generar_headers_http(body.encode(), "200 OK")
+            res = manejar_descarga(archivo_pedido)
         else:
             body = generar_pagina_error("404: NOT FOUND")
-            res = generar_headers_http(body, "404 NOT FOUND")
+            res = generar_headers_http(body.encode(), "404 NOT FOUND")
 
     elif(tipo_req == "POST"):
         boundary = extraer_boundary(headers)
@@ -195,21 +202,28 @@ def generar_pagina_error(error):
 
 #CODIGO A COMPLETAR
 
-def manejar_descarga(archivo, request_line):
+def manejar_descarga(archivo):
     """
     Genera una respuesta HTTP con el archivo solicitado. 
     Si el archivo no existe debe devolver un error.
     Debe incluir los headers: Content-Type, Content-Length y Content-Disposition.
     """
-    # COMPLETAR
-    return b""
-
+    res = b""
+    if os.path.isfile(archivo):
+        body = b""
+        with open(archivo, "rb") as f:     # rb = leer en binario
+            body = f.read()
+        res = generar_headers_http(body, "200 OK", os.path.basename(archivo))
+    else:
+        body = generar_pagina_error("404 NOT FOUND")
+        res = generar_headers_http(body.encode(), "404 NOT FOUND")
+    return res
 
 def manejar_carga(body, boundary, directorio_destino="."):
     """
     Procesa un POST con multipart/form-data, guarda el archivo y devuelve una página de confirmación.
     """
-    res = ""
+    res = b""
     multipart = parsear_multipart(body, boundary)
 
     nombre_archivo = multipart[0]
@@ -224,7 +238,7 @@ def manejar_carga(body, boundary, directorio_destino="."):
         f.close()
 
         body = generar_html_interfaz("upload") # Esto deberia ser pag. de confirmado.
-        res = generar_headers_http(body, "200 OK")
+        res = generar_headers_http(body.encode(), "200 OK")
         
 
     return res
@@ -273,9 +287,9 @@ def start_server(archivo_descarga=None, modo_upload=False):
             content_length = extraer_content_length(headers)
             body = leer_body(conn, content_length, body_start)
 
-        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida)
+        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga)
        
-        conn.sendall(res.encode())
+        conn.sendall(res)
         conn.close() # Y sacar esto para mantener abierto
 
     # Ver cuando se cierra ...
