@@ -140,6 +140,27 @@ def parsear_multipart(body, boundary):
         print(f"Error al parsear multipart: {e}")
         return None, None
 
+def leer_campo_contra(body, boundary):
+    """Devuelve el valor del campo 'contra' asumiendo que body NO incluye los headers HTTP."""
+    boundary_bytes = f'--{boundary}'.encode()
+    parts = body.split(boundary_bytes)
+
+    for part in parts:
+        # Saltar partes vacías
+        if not part.strip():
+            continue
+
+        # Buscar específicamente el campo `contra`
+        if b'name="contra"' not in part:
+            continue
+
+        # Asumiendo que encontramos la parte correcta
+        parte_con_contra = part.decode()
+        contra_ingresada = parte_con_contra.split("\r\n\r\n")[1].split("\r\n")[0]
+        return contra_ingresada
+
+    return None
+
 def generar_html_interfaz(modo):
     """
     Genera el HTML de la interfaz principal:
@@ -180,6 +201,10 @@ def generar_html_interfaz(modo):
   <body>
     <h1>Subir archivo</h1>
     <form method="POST" enctype="multipart/form-data">
+        <div>
+            <label for="contra">Ingrese la contraseña: </label>
+            <input type="password" name="contra" required>
+        </div>
       <input type="file" name="file" required>
       <input type="submit" value="Subir">
     </form>
@@ -233,8 +258,14 @@ def manejar_carga(body, boundary, directorio_destino="."):
     Procesa un POST con multipart/form-data, guarda el archivo y devuelve una página de confirmación.
     """
     res = b""
-    multipart = parsear_multipart(body, boundary)
+    contra_ingresada = leer_campo_contra(body, boundary)
+    CONTRASEÑA_SECRETA = "EMIYRAFA"
+    if contra_ingresada != CONTRASEÑA_SECRETA:
+        body = generar_pagina_error("403 FORBIDDEN")
+        res = generar_headers_http(body.encode(), "403 FORBIDDEN")
+        return res
 
+    multipart = parsear_multipart(body, boundary)
     nombre_archivo = multipart[0]
     contenido = multipart[1]
 
