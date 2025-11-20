@@ -77,7 +77,7 @@ def generar_headers_http(body, codigo, archivo = None, incluir_gzip = False):
     if incluir_gzip:
         response_headers += "Content-Encoding: gzip\r\n"
     
-    response_headers += "\r\n"  # Separator between headers and body
+    response_headers += "\r\n"  # Separador entre headers and body
     
     return response_headers.encode() + body
 
@@ -140,7 +140,7 @@ def parsear_multipart(body, boundary):
         print(f"Error al parsear multipart: {e}")
         return None, None
 
-def leer_campo_contra(body, boundary):
+def leer_campo_contra(body, boundary): # EMI
     """Devuelve el valor del campo 'contra' asumiendo que body NO incluye los headers HTTP."""
     boundary_bytes = f'--{boundary}'.encode()
     parts = body.split(boundary_bytes)
@@ -231,6 +231,25 @@ def generar_pagina_error(error):
 </html>
 """
 
+def generar_pagina_exito(nombre_archivo):
+    return f"""
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Subido con éxito</title>
+    <style>
+      body {{ font-family: sans-serif; max-width: 500px; margin: 50px auto; }}
+      a {{ display: inline-block; padding: 10px 20px; background: #28a745; color: white; text-decoration: none; border-radius: 5px; }}
+    </style>
+  </head>
+  <body>
+    <h1>Se ha subido el archivo con éxito</h1>
+    <p>Arhivo subido: {nombre_archivo}</p>
+    <a href="/">Volver a inicio</a>
+  </body>
+</html>
+"""
+
 #CODIGO A COMPLETAR
 
 def manejar_descarga(archivo, cliente_soporta_gzip):
@@ -246,7 +265,7 @@ def manejar_descarga(archivo, cliente_soporta_gzip):
             body = f.read()
         
         if cliente_soporta_gzip:
-            body = gzip.compress(body)
+            body = gzip.compress(body) # EMI
         res = generar_headers_http(body, "200 OK", os.path.basename(archivo), incluir_gzip=cliente_soporta_gzip)
     else:
         body = generar_pagina_error("404 NOT FOUND")
@@ -277,7 +296,7 @@ def manejar_carga(body, boundary, directorio_destino="."):
         f.write(contenido)
         f.close()
 
-        body = generar_html_interfaz("upload") # Esto deberia ser pag. de confirmado.
+        body = generar_pagina_exito(nombre_archivo)
         res = generar_headers_http(body.encode(), "200 OK")
         
 
@@ -317,8 +336,12 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
         headers, body_start = leer_headers(conn)
         print(headers.split("\r\n")[0])
         
-        tipo_req = headers.split("\r\n")[0].split(" ")[0]
-        ruta_pedida = headers.split("\r\n")[0].split(" ")[1]
+        split_espacio = headers.split("\r\n")[0].split(" ")
+        tipo_req = split_espacio[0]
+
+        ruta_pedida = "/"
+        if len(split_espacio) > 1:
+            ruta_pedida = split_espacio[1]
 
         print(f"-- Request {tipo_req} {ruta_pedida} de {addr[0]} con socket {addr[1]}")
         body = b""
@@ -330,7 +353,7 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
         res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
        
         conn.sendall(res)
-        conn.close() # Y sacar esto para mantener abierto
+        conn.close() # Y sacar esto para mantener abierto EMI
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
