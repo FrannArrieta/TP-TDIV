@@ -3,7 +3,7 @@ import sys
 import os
 from urllib.parse import parse_qs, urlparse
 import qrcode
-
+import gzip
 
 #FUNCIONES AUXILIARES
 
@@ -61,7 +61,10 @@ def extraer_boundary(headers):
 def extraer_content_length(headers):
     return int(headers.split("Content-Length: ")[1].split("\r\n")[0])
 
-def generar_headers_http(body, codigo, archivo = None):
+def extraer_encoding_gzip(headers):
+    return "Accept-Encoding: gzip" in headers
+
+def generar_headers_http(body, codigo, archivo = None, incluir_gzip = False):
     response_headers = "HTTP/1.1" + codigo +  "\r\n"
     response_headers += f"Content-Length: {len(body)}\r\n"
 
@@ -70,16 +73,19 @@ def generar_headers_http(body, codigo, archivo = None):
         response_headers += f'Content-Disposition: attachment; filename="{archivo}"\r\n'
     else:
         response_headers += "Content-Type: text/html\r\n"
+
+    if incluir_gzip:
+        response_headers += "Content-Encoding: gzip\r\n"
     
     response_headers += "\r\n"  # Separator between headers and body
     
     return response_headers.encode() + body
 
-def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_pedido = None):
+def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_pedido = None, usa_gzip = False):
     res = b""
     
     if(tipo_req == "GET"):
-        if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"): # PREGUNTAR A EMI (or rafa)
+        if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"): # PREGUNTAR A EMI (o rafa)
             body = ""
             if modo_upload == True:
                 body = generar_html_interfaz("upload")
@@ -87,10 +93,10 @@ def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, ar
                 body = generar_html_interfaz("download")
             res = generar_headers_http(body.encode(), "200 OK")
         elif(ruta_pedida == "/download"):
-            # body = generar_html_interfaz("download")
-
-            # res = generar_headers_http(body.encode(), "200 OK")
-            res = manejar_descarga(archivo_pedido)
+            cliente_soporta_gzip = False
+            if usa_gzip:
+                cliente_soporta_gzip = extraer_encoding_gzip(headers)
+            res = manejar_descarga(archivo_pedido, cliente_soporta_gzip)
         else:
             body = generar_pagina_error("404: NOT FOUND")
             res = generar_headers_http(body.encode(), "404 NOT FOUND")
@@ -202,7 +208,7 @@ def generar_pagina_error(error):
 
 #CODIGO A COMPLETAR
 
-def manejar_descarga(archivo):
+def manejar_descarga(archivo, cliente_soporta_gzip):
     """
     Genera una respuesta HTTP con el archivo solicitado. 
     Si el archivo no existe debe devolver un error.
@@ -213,7 +219,10 @@ def manejar_descarga(archivo):
         body = b""
         with open(archivo, "rb") as f:     # rb = leer en binario
             body = f.read()
-        res = generar_headers_http(body, "200 OK", os.path.basename(archivo))
+        
+        if cliente_soporta_gzip:
+            body = gzip.compress(body)
+        res = generar_headers_http(body, "200 OK", os.path.basename(archivo), incluir_gzip=cliente_soporta_gzip)
     else:
         body = generar_pagina_error("404 NOT FOUND")
         res = generar_headers_http(body.encode(), "404 NOT FOUND")
@@ -244,7 +253,7 @@ def manejar_carga(body, boundary, directorio_destino="."):
     return res
 
 
-def start_server(archivo_descarga=None, modo_upload=False):
+def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     """
     Inicia el servidor TCP.
     - Si se especifica archivo_descarga, se inicia en modo 'download'.
@@ -256,7 +265,7 @@ def start_server(archivo_descarga=None, modo_upload=False):
 
     ip_server = get_wifi_ip()
     puerto = 5003
-    print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server)
+    print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server + " con GZIP en: " + str(usa_gzip))
 
     # 2. Mostrar información del servidor y el código QR
     # COMPLETAR: imprimir URL y modo de operación (download/upload)
@@ -287,13 +296,10 @@ def start_server(archivo_descarga=None, modo_upload=False):
             content_length = extraer_content_length(headers)
             body = leer_body(conn, content_length, body_start)
 
-        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga)
+        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
        
         conn.sendall(res)
         conn.close() # Y sacar esto para mantener abierto
-
-    # Ver cuando se cierra ...
-    conn.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -305,12 +311,16 @@ if __name__ == "__main__":
     comando = sys.argv[1].lower()
 
     if comando == "upload":
-        start_server(archivo_descarga=None, modo_upload=True)
+        start_server(archivo_descarga=None, modo_upload=True, usa_gzip= False)
 
     elif comando == "download" and len(sys.argv) > 2:
         archivo = sys.argv[2]
         ruta_archivo = os.path.join("archivos_servidor", archivo)
-        start_server(archivo_descarga=ruta_archivo, modo_upload=False)
+
+        USA_GZIP = False
+        if len(sys.argv) == 4 and sys.argv[3] == "gzip":
+            USA_GZIP = True
+        start_server(archivo_descarga=ruta_archivo, modo_upload=False, usa_gzip=USA_GZIP)
 
     else:
         print("Comando no reconocido o archivo faltante")
