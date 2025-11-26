@@ -372,7 +372,7 @@ if __name__ == "__main__":
         ruta_archivo = os.path.join("archivos_servidor", archivo)
 
         USA_GZIP = False
-        if len(sys.argv) == 4 and sys.argv[3] == "gzip":
+        if "--gzip" in sys.argv:
             USA_GZIP = True
         start_server(archivo_descarga=ruta_archivo, modo_upload=False, usa_gzip=USA_GZIP)
 
