@@ -1,11 +1,14 @@
 from socket import *
+from datetime import datetime
 import sys
 import os
-from urllib.parse import parse_qs, urlparse
 import qrcode
 import gzip
 
 #FUNCIONES AUXILIARES
+
+AZUL = '\033[94m'
+FINC = '\033[0m'
 
 def imprimir_qr_en_terminal(url):
     """Dada una URL la imprime por terminal como un QR"""
@@ -263,9 +266,14 @@ def manejar_descarga(archivo, cliente_soporta_gzip):
         body = b""
         with open(archivo, "rb") as f:     # rb = leer en binario
             body = f.read()
-        
+        print(AZUL + f"- Tamaño sin comprimir: {len(body)} bytes" + FINC)
         if cliente_soporta_gzip:
-            body = gzip.compress(body) # EMI
+            size_viejo = len(body)
+            body = gzip.compress(body)
+
+            print(AZUL + f"- Tamaño comprimido: {len(body)} bytes" + FINC)
+            ratio = round((1 - (size_viejo / len(body))) * 100, 2)
+            print(AZUL + f"- Ratio de compresión: {ratio}%" + FINC)
         res = generar_headers_http(body, "200 OK", os.path.basename(archivo), incluir_gzip=cliente_soporta_gzip)
     else:
         body = generar_pagina_error("404 NOT FOUND")
@@ -334,7 +342,6 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     while True:
         conn, addr = s.accept() # Si queremos mantener abierto esto arriba
         headers, body_start = leer_headers(conn)
-        print(headers.split("\r\n")[0])
         
         split_espacio = headers.split("\r\n")[0].split(" ")
         tipo_req = split_espacio[0]
@@ -350,10 +357,16 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
             content_length = extraer_content_length(headers)
             body = leer_body(conn, content_length, body_start)
 
+        tiempo_llego = datetime.now()
+
         res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
        
         conn.sendall(res)
-        conn.close() # Y sacar esto para mantener abierto EMI
+        
+        tiempo_cierre = datetime.now()
+        tiempo_transferencia = tiempo_cierre - tiempo_llego
+        print(AZUL + f"- Tiempo de transferencia: {tiempo_transferencia.total_seconds()} segs" + FINC)
+        conn.close()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
