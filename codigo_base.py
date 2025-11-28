@@ -104,9 +104,12 @@ def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, ar
             body = generar_pagina_error("404: NOT FOUND")
             res = generar_headers_http(body.encode(), "404 NOT FOUND")
 
-    elif(tipo_req == "POST"):
+    elif(tipo_req == "POST" and modo_upload):
         boundary = extraer_boundary(headers)
         res = manejar_carga(body, boundary, "archivos_servidor")
+    else:
+        body = generar_pagina_error("404: NOT FOUND")
+        res = generar_headers_http(body.encode(), "404 NOT FOUND")
 
     return res
 
@@ -306,7 +309,6 @@ def manejar_carga(body, boundary, directorio_destino="."):
 
         body = generar_pagina_exito(nombre_archivo)
         res = generar_headers_http(body.encode(), "200 OK")
-        
 
     return res
 
