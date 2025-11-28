@@ -108,8 +108,8 @@ def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, ar
         boundary = extraer_boundary(headers)
         res = manejar_carga(body, boundary, "archivos_servidor")
     else:
-        body = generar_pagina_error("404: NOT FOUND")
-        res = generar_headers_http(body.encode(), "404 NOT FOUND")
+        body = generar_pagina_error("405: METHOD NOT ALLOWED")
+        res = generar_headers_http(body.encode(), "405 METHOD NOT ALLOWED")
 
     return res
 
