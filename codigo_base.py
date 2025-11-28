@@ -4,6 +4,7 @@ import sys
 import os
 import qrcode
 import gzip
+import threading
 
 #FUNCIONES AUXILIARES
 
@@ -313,6 +314,34 @@ def manejar_carga(body, boundary, directorio_destino="."):
     return res
 
 
+def resolver_conexion(conn, addr, modo_upload, archivo_descarga, usa_gzip):
+    headers, body_start = leer_headers(conn)
+        
+    split_espacio = headers.split("\r\n")[0].split(" ")
+    tipo_req = split_espacio[0]
+
+    ruta_pedida = "/"
+    if len(split_espacio) > 1:
+        ruta_pedida = split_espacio[1]
+
+    print(f"-- Request {tipo_req} {ruta_pedida} de {addr[0]} con socket {addr[1]}")
+    body = b""
+
+    if(tipo_req == "POST"):
+        content_length = extraer_content_length(headers)
+        body = leer_body(conn, content_length, body_start)
+
+    tiempo_llego = datetime.now()
+
+    res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
+    
+    conn.sendall(res)
+    
+    tiempo_cierre = datetime.now()
+    tiempo_transferencia = tiempo_cierre - tiempo_llego
+    print(AZUL + f"- Tiempo de transferencia: {tiempo_transferencia.total_seconds()} segs" + FINC)
+    conn.close()
+
 def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     """
     Inicia el servidor TCP.
@@ -342,33 +371,10 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     s.listen()
 
     while True:
-        conn, addr = s.accept() # Si queremos mantener abierto esto arriba
-        headers, body_start = leer_headers(conn)
-        
-        split_espacio = headers.split("\r\n")[0].split(" ")
-        tipo_req = split_espacio[0]
-
-        ruta_pedida = "/"
-        if len(split_espacio) > 1:
-            ruta_pedida = split_espacio[1]
-
-        print(f"-- Request {tipo_req} {ruta_pedida} de {addr[0]} con socket {addr[1]}")
-        body = b""
-
-        if(tipo_req == "POST"):
-            content_length = extraer_content_length(headers)
-            body = leer_body(conn, content_length, body_start)
-
-        tiempo_llego = datetime.now()
-
-        res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
-       
-        conn.sendall(res)
-        
-        tiempo_cierre = datetime.now()
-        tiempo_transferencia = tiempo_cierre - tiempo_llego
-        print(AZUL + f"- Tiempo de transferencia: {tiempo_transferencia.total_seconds()} segs" + FINC)
-        conn.close()
+        conn, addr = s.accept()
+        t = threading.Thread(target=resolver_conexion, args=(conn, addr, modo_upload, archivo_descarga, usa_gzip))
+        t.daemon = True # Hacer que termine cuando muera el programa
+        t.start()
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
