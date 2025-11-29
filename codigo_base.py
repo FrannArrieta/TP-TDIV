@@ -8,12 +8,12 @@ import threading
 
 #FUNCIONES AUXILIARES
 
+# Colores para prints
 AZUL = '\033[94m'
 FINC = '\033[0m'
 
 def imprimir_qr_en_terminal(url):
     """Dada una URL la imprime por terminal como un QR"""
-    #COMPLETAR usando la librería qrcode
     qr = qrcode.QRCode(border=1)
     qr.add_data(url)
     qr.make()
@@ -59,16 +59,20 @@ def leer_body(conn, content_length, body_start):
         body += chunk
     return body
 
-def extraer_boundary(headers):
+def extraer_boundary(headers): 
+    """Extraer el campo boundary de los headers HTTP"""
     return headers.split("boundary=")[1].split("\r\n")[0]
 
 def extraer_content_length(headers):
+    """Extraer el campo content-length de los headers HTTP"""
     return int(headers.split("Content-Length: ")[1].split("\r\n")[0])
 
 def extraer_encoding_gzip(headers):
+    """Extraer si los headers HTTP incluyen gzip"""
     return "Accept-Encoding: gzip" in headers
 
 def generar_headers_http(body, codigo, archivo = None, incluir_gzip = False):
+    """Función general para generar cualquier tipo de header HTTP"""
     response_headers = "HTTP/1.1" + codigo +  "\r\n"
     response_headers += f"Content-Length: {len(body)}\r\n"
 
@@ -86,28 +90,37 @@ def generar_headers_http(body, codigo, archivo = None, incluir_gzip = False):
     return response_headers.encode() + body
 
 def generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_pedido = None, usa_gzip = False):
+    """Generar la respuesta en función de la ruta y el método solicitado"""
     res = b""
     
     if(tipo_req == "GET"):
-        if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"): # PREGUNTAR A EMI (o rafa)
+        # HTML
+        if(ruta_pedida == "/" or ruta_pedida == "/favicon.ico"):
             body = ""
             if modo_upload == True:
                 body = generar_html_interfaz("upload")
             else:
                 body = generar_html_interfaz("download")
             res = generar_headers_http(body.encode(), "200 OK")
+        
+        # Download
         elif(ruta_pedida == "/download"):
             cliente_soporta_gzip = False
             if usa_gzip:
                 cliente_soporta_gzip = extraer_encoding_gzip(headers)
             res = manejar_descarga(archivo_pedido, cliente_soporta_gzip)
+        
+        # Error GET
         else:
             body = generar_pagina_error("404: NOT FOUND")
             res = generar_headers_http(body.encode(), "404 NOT FOUND")
 
+    # Upload
     elif(tipo_req == "POST" and modo_upload):
         boundary = extraer_boundary(headers)
         res = manejar_carga(body, boundary, "archivos_servidor")
+
+    # Error método inválido
     else:
         body = generar_pagina_error("405: METHOD NOT ALLOWED")
         res = generar_headers_http(body.encode(), "405 METHOD NOT ALLOWED")
@@ -147,7 +160,7 @@ def parsear_multipart(body, boundary):
         print(f"Error al parsear multipart: {e}")
         return None, None
 
-def leer_campo_contra(body, boundary): # EMI
+def leer_campo_contra(body, boundary):
     """Devuelve el valor del campo 'contra' asumiendo que body NO incluye los headers HTTP."""
     boundary_bytes = f'--{boundary}'.encode()
     parts = body.split(boundary_bytes)
@@ -157,7 +170,7 @@ def leer_campo_contra(body, boundary): # EMI
         if not part.strip():
             continue
 
-        # Buscar específicamente el campo `contra`
+        # Buscar específicamente el campo contra
         if b'name="contra"' not in part:
             continue
 
@@ -257,8 +270,6 @@ def generar_pagina_exito(nombre_archivo):
 </html>
 """
 
-#CODIGO A COMPLETAR
-
 def manejar_descarga(archivo, cliente_soporta_gzip):
     """
     Genera una respuesta HTTP con el archivo solicitado. 
@@ -268,9 +279,13 @@ def manejar_descarga(archivo, cliente_soporta_gzip):
     res = b""
     if os.path.isfile(archivo):
         body = b""
-        with open(archivo, "rb") as f:     # rb = leer en binario
+
+        # LEER EL ARCHIVO
+        with open(archivo, "rb") as f:
             body = f.read()
         print(AZUL + f"- Tamaño sin comprimir: {len(body)} bytes" + FINC)
+        
+        # GENERAR RESPUESTA
         if cliente_soporta_gzip:
             size_viejo = len(body)
             body = gzip.compress(body)
@@ -291,7 +306,7 @@ def manejar_carga(body, boundary, directorio_destino="."):
     res = b""
     contra_ingresada = leer_campo_contra(body, boundary)
     CONTRASEÑA_SECRETA = "EMIYRAFA"
-    if contra_ingresada != CONTRASEÑA_SECRETA:
+    if contra_ingresada != CONTRASEÑA_SECRETA: # Verificar contraseña
         body = generar_pagina_error("403 FORBIDDEN")
         res = generar_headers_http(body.encode(), "403 FORBIDDEN")
         return res
@@ -304,6 +319,7 @@ def manejar_carga(body, boundary, directorio_destino="."):
         print(nombre_archivo)
         ruta = directorio_destino + "/" + nombre_archivo
 
+        # Guardar el archivo
         f = open(ruta, "wb")
         f.write(contenido)
         f.close()
@@ -315,6 +331,10 @@ def manejar_carga(body, boundary, directorio_destino="."):
 
 
 def resolver_conexion(conn, addr, modo_upload, archivo_descarga, usa_gzip):
+    """
+    Generar y enviar la respuesta a una solicitud.
+    Esta función corre en paralelo en los distintos threads.
+    """
     headers, body_start = leer_headers(conn)
         
     split_espacio = headers.split("\r\n")[0].split(" ")
@@ -335,12 +355,13 @@ def resolver_conexion(conn, addr, modo_upload, archivo_descarga, usa_gzip):
 
     res = generar_respuesta_http(headers, body, modo_upload, tipo_req, ruta_pedida, archivo_descarga, usa_gzip)
     
-    conn.sendall(res)
+    conn.sendall(res) # Enviar los bytes por el socket.
     
     tiempo_cierre = datetime.now()
     tiempo_transferencia = tiempo_cierre - tiempo_llego
     print(AZUL + f"- Tiempo de transferencia: {tiempo_transferencia.total_seconds()} segs" + FINC)
-    conn.close()
+    
+    conn.close() # Finalizar la conexión.
 
 def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     """
@@ -348,28 +369,27 @@ def start_server(archivo_descarga=None, modo_upload=False, usa_gzip = False):
     - Si se especifica archivo_descarga, se inicia en modo 'download'.
     - Si modo_upload=True, se inicia en modo 'upload'.
     """
-
-    # 1. Obtener IP local y poner al servidor a escuchar en un puerto aleatorio
-    #COMPLETAR
-
     ip_server = get_wifi_ip()
     puerto = 5003
-    print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server + " con GZIP en: " + str(usa_gzip))
 
-    # 2. Mostrar información del servidor y el código QR
-    # COMPLETAR: imprimir URL y modo de operación (download/upload)
+    # Mostrar información del servidor y el código QR
+    print("arrancando el server en el puerto " + str(puerto) + " con ip " + ip_server + " con GZIP en: " + str(usa_gzip))
     url = "http://" + ip_server + ":" + str(puerto)
+    
     if modo_upload == True: 
         print("Estas en modo Upload")
     else:
         print("Estas en modo Download")
+    
     imprimir_qr_en_terminal(url)
     print(url)
-    s = socket(AF_INET, SOCK_STREAM)
+    
+    s = socket(AF_INET, SOCK_STREAM) # Generar el socket TCP
     s.bind((ip_server, puerto))
     
     s.listen()
 
+    # Aceptar conexiones indefinidamente y resolverlas en cada thread.
     while True:
         conn, addr = s.accept()
         t = threading.Thread(target=resolver_conexion, args=(conn, addr, modo_upload, archivo_descarga, usa_gzip))
