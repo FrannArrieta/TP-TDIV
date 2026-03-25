@@ -11,4 +11,4 @@ HTTP de clientes que iniciaron esta conexión y permanecen conectados a la misma
 para gestionar la transferencia de archivos entre el dispositivo conectado y el servidor. Para
 ello se genera una URL a la que se puede acceder con un código QR.
 
-Los detalles de la implementación, se encuentran descritos en el archivo _informe.pdf_
+Los detalles de la implementación se encuentran descritos en el archivo _informe.pdf_
