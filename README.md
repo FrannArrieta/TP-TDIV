@@ -10,3 +10,5 @@ La finalidad de este servidor es escuchar las conexiones entrantes y atender las
 HTTP de clientes que iniciaron esta conexión y permanecen conectados a la misma red
 para gestionar la transferencia de archivos entre el dispositivo conectado y el servidor. Para
 ello se genera una URL a la que se puede acceder con un código QR.
+
+Los detalles de la implementación, se encuentran descritos en el archivo _informe.pdf_
